@@ -10,4 +10,8 @@ pydantic_core==2.46.1
 starlette==1.0.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
-зuvicorn==0.44.0
+uvicorn==0.44.0
+sqlalchemy==2.0.41
+asyncpg==0.30.0
+greenlet==3.2.4
+
