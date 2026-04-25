@@ -121,7 +121,12 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
                     continue
 
                 # Сначала сохраняем сообщение в БД, чтобы realtime и storage не расходились.
-                await create_message(session=session, chat_id=chat_id, user_id=user_id, message=text)
+                await create_message(
+                    session=session,
+                    chat_id=chat_id,
+                    sender_id=user_id,
+                    text=text,
+                )
 
             # После успешного сохранения пытаемся доставить сообщение получателю онлайн.
             sent = await manager.send_message(to_user_id, json.dumps(response_sent, ensure_ascii=False))
