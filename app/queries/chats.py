@@ -4,8 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Chat
 
 
-async def create_chat(session:AsyncSession):
-    chat = Chat()
+async def create_chat(session:AsyncSession, chat_type: str, title: str | None = None):
+    chat = Chat(chat_type=chat_type, title=title)
 
     session.add(chat)
     await session.commit()
