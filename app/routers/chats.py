@@ -3,12 +3,63 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.queries.users import get_user_by_id
-from app.queries.chats import create_chat, get_chat_by_id, get_private_chat_between_users, get_chats_by_user_id
+from app.queries.chats import (
+    create_chat,
+    get_chat_by_id,
+    get_private_chat_between_users,
+    get_chats_by_user_id,
+    get_chat_meta_by_id,
+)
 from app.queries.messages import get_message_by_chat_id, get_last_message_by_chat_id
-from app.queries.chat_members import add_chat_member, get_chat_members
+from app.queries.chat_members import add_chat_member, get_chat_members, get_chat_member
 
 
 router = APIRouter()
+
+
+# Рабочая ручка: возвращает мета-информацию о чате для экрана открытия чата.
+@router.get('/chats/{chat_id}')
+async def get_chat_meta_endpoint(
+        chat_id: int,
+        user_id: int,
+        session: AsyncSession = Depends(get_db)
+):
+    chat = await get_chat_meta_by_id(session, chat_id)
+
+    if chat is None:
+        raise HTTPException(status_code=404, detail='Chat not found')
+
+    chat_member = await get_chat_member(session, chat_id, user_id)
+
+    if chat_member is None:
+        raise HTTPException(status_code=403, detail='User is not a member of this chat')
+
+    members = await get_chat_members(session, chat.id)
+    display_name = chat.title
+
+    if chat.chat_type == 'private':
+        peer_member = next((member for member in members if member.user_id != user_id), None)
+
+        if peer_member is None:
+            display_name = 'Saved Message'
+        else:
+            peer_user = await get_user_by_id(session, peer_member.user_id)
+
+            if peer_user is not None:
+                display_name = peer_user.user_name
+
+    if not display_name:
+        display_name = f'Chat {chat.id}'
+
+    return {
+        'id': chat.id,
+        'chat_type': chat.chat_type,
+        'title': chat.title,
+        'display_name': display_name,
+        'members_count': len(members),
+        'created_at': chat.created_at,
+        'last_message_at': chat.last_message_at,
+    }
 
 
 # Рабочая ручка: возвращает историю сообщений по chat_id.
