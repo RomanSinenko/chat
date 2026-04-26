@@ -78,3 +78,11 @@ async def get_chats_by_user_id(
 
     return result.scalars().all()
 
+
+# Возвращает мета-информацию о чате по chat_id для экрана открытия чата
+async def get_chat_meta_by_id(
+        session: AsyncSession,
+        chat_id: int,
+):
+    return await get_chat_by_id(session, chat_id)
+
