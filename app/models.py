@@ -20,6 +20,7 @@ class Chat(Base):
     chat_type: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Message(Base):

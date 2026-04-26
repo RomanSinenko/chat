@@ -2,8 +2,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import router as api_router
 from app.db import init_db
+from app.routers.users import router as users_router
+from app.routers.chats import router as chats_router
 from app.websocket import router as websocket_router
 
 
@@ -21,5 +22,6 @@ def root():
     return {'status': 'ok-200'}
 
 
-app.include_router(api_router)
+app.include_router(users_router)
+app.include_router(chats_router)
 app.include_router(websocket_router)
