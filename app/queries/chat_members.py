@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ChatMember
 
-# Создаем связь между пользователем и чатом - фиксируем, что пользователь состоит в чате
+# Создаём связь между пользователем и чатом: фиксируем, что пользователь состоит в чате.
 async def add_chat_member(
         session: AsyncSession,
         chat_id: int,
@@ -23,7 +23,7 @@ async def add_chat_member(
     return chat_member
 
 
-# Ищем запись mambership, что бы понять, состоит ли пользователь в конкретном чате
+# Ищем запись membership, чтобы понять, состоит ли пользователь в конкретном чате.
 async def get_chat_member(
         session: AsyncSession,
         chat_id: int,
@@ -38,7 +38,7 @@ async def get_chat_member(
     return result.scalar_one_or_none()
 
 
-# Возвращает всех участников конкретного чата
+# Возвращаем всех участников конкретного чата.
 async def get_chat_members(
         session: AsyncSession,
         chat_id: int,

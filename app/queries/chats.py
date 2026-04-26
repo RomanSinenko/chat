@@ -5,7 +5,7 @@ from app.models import Chat, ChatMember
 from app.queries.chat_members import get_chat_members
 
 
-# Создает чат
+# Создаём чат.
 async def create_chat(session:AsyncSession, chat_type: str, title: str | None = None):
     chat = Chat(chat_type=chat_type, title=title)
 
@@ -16,7 +16,7 @@ async def create_chat(session:AsyncSession, chat_type: str, title: str | None = 
     return chat
 
 
-# Возвращает чат под chat_id
+# Возвращаем чат по chat_id.
 async def get_chat_by_id(session: AsyncSession, chat_id: int):
     stmt = (
         select(Chat).
@@ -27,7 +27,7 @@ async def get_chat_by_id(session: AsyncSession, chat_id: int):
     return result.scalar_one_or_none()
 
 
-# Возвращает private-chat, в которых уже состоят конкретные пользователи
+# Возвращаем private-чаты, в которых уже состоит конкретный пользователь.
 async def get_private_chats_by_user_id(
         session: AsyncSession,
         user_id: int,
@@ -45,7 +45,7 @@ async def get_private_chats_by_user_id(
     return result.scalars().all()
 
 
-# Ищет уже существующий личный чат между двумя пользователями
+# Ищем уже существующий личный чат между двумя пользователями.
 async def get_private_chat_between_users(
         session: AsyncSession,
         user_id: int,
@@ -61,3 +61,20 @@ async def get_private_chat_between_users(
             return chat
 
     return None
+
+
+# Возвращаем все чаты пользователя для экрана диалогов.
+async def get_chats_by_user_id(
+        session: AsyncSession,
+        user_id: int,
+):
+    stmt = (
+        select(Chat)
+        .join(ChatMember, ChatMember.chat_id == Chat.id)
+        .where(ChatMember.user_id == user_id)
+        .order_by(Chat.last_message_at.desc(), Chat.created_at.desc())
+    )
+    result = await session.execute(stmt)
+
+    return result.scalars().all()
+
