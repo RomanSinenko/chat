@@ -46,8 +46,9 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
                 user = await get_user_by_id(session, user_id)
                 chat = await get_chat_by_id(session, chat_id)
                 chat_member = await get_chat_member(session, chat_id, user_id)
+                recipient_member = await get_chat_member(session, chat_id, to_user_id)
 
-                # Проверка, что пользователь существует
+                # Проверка, что пользователь существует.
                 if user is None:
                     await manager.send_error(
                         websocket,
@@ -56,12 +57,13 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
                     )
                     continue
 
-                # Проверка, что чат существует
+                # Проверка, что чат существует.
                 if chat is None:
                     await manager.send_error(
                         websocket,
                         'chat_not_found',
-                        f'Chat with id {chat_id} not found in database',)
+                        f'Chat with id {chat_id} not found in database',
+                    )
                     continue
 
                 # Проверка, что пользователь состоит в чате
@@ -70,6 +72,15 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
                         websocket,
                         'user_not_found_in_chat',
                         f'User with id {user_id} is not a member of chat {chat_id}',
+                    )
+                    continue
+
+                # Проверка, что получатель тоже состоит в этом чате.
+                if recipient_member is None:
+                    await manager.send_error(
+                        websocket,
+                        'recipient_not_found_in_chat',
+                        f'User with id {to_user_id} is not a member of chat {chat_id}',
                     )
                     continue
 

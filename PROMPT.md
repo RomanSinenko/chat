@@ -1,614 +1,403 @@
-# Проект
-Backend MVP чат-приложения с поддержкой realtime-обмена сообщениями по WebSocket.
-Проект разрабатывается с нуля с прицелом на:
-- семейный/личный рабочий MVP
-- дальнейший рост в полноценный мессенджер
-- возможность масштабирования и дальнейшей продажи как стартапа
+# Backend Prompt
+
+Backend MVP чат-приложения с realtime-обменом по WebSocket.
+
+Путь:
+- `/Users/romansinenko/Desktop/prog/Chat/backend`
+
+Текущая ветка:
+- `backend-mobile-contract-polish`
+
+Цель текущей ветки:
+- подготовить backend-контракты под дальнейшую iOS-интеграцию
+- разделить identity-модель пользователя
+- добавить временный dev-login по телефону
+- закрыть базовые contract/security блокеры перед продолжением iOS
 
 ---
 
-# Цель проекта
-Создать минимально рабочий backend чата, который умеет:
-- поднимать HTTP API
-- принимать WebSocket-подключения
-- поддерживать realtime-обмен сообщениями между пользователями
-- обрабатывать ошибки формата сообщений и недоступного получателя
-- хранить данные в PostgreSQL
-- постепенно перейти к persistent-чату с историей сообщений
+# Текущий Стек
 
-С дальнейшим развитием:
-- авторизация и регистрация по SMS-коду
-- хранение пользователей, устройств и сообщений
-- масштабирование через Redis / брокеры сообщений
-- добавление E2EE
----
-
-# Архитектурная идея
-Проект строится поэтапно, от простого к расширяемому.
-
-Слои:
-- HTTP API
+- Python
+- FastAPI
+- PostgreSQL
+- SQLAlchemy async
+- asyncpg
 - WebSocket
-- ConnectionManager
-- DB layer
-- Query layer
-- позже: service layer
-- позже: auth layer
-- позже: encryption layer
+- phonenumbers для проверки и нормализации телефонов
+- uvicorn
 
-Ключевые принципы:
-- сначала рабочий MVP
-- затем постепенное усложнение
-- не писать лишнюю абстракцию наперёд
-- каждую новую часть понимать, а не копировать вслепую
-- выносить ответственность из endpoint-ов в отдельные функции и модули
-- двигаться маленькими шагами
+Запуск:
+
+```bash
+cd /Users/romansinenko/Desktop/prog/Chat/backend
+source .venv/bin/activate
+python3 run.py
+```
 
 ---
 
-# Дорожная карта проекта
+# Текущая Модель Данных
 
-## 1. MVP Backend (realtime чат)
-- WebSocket соединение
-- обмен сообщениями между пользователями
-- ConnectionManager
+## `User`
 
-Статус: ✅ завершено
+Публичный профиль пользователя:
+- `id`
+- `username` — уникальный публичный handle, в UI показывается как `@username`
+- `display_name` — неуникальное отображаемое имя
+- `is_username_custom` — показывает, выбрал ли пользователь username сам
+- `created_at`
+- `updated_at`
 
----
+Старое поле `user_name` убрано из backend-кода.
 
-## 2. Стабилизация и протокол сообщений
-- JSON формат
-- единый формат сообщений (`type: message/system`)
-- логирование (`connect/send/receive/disconnect`)
-- обработка ошибок (`WebSocketDisconnect`)
-- защита от повторного подключения одного `user_id`
+## `UserPhone`
 
-Статус: ✅ завершено
+Телефон и auth/identity-часть:
+- `id`
+- `user_id`
+- `phone_e164`
+- `phone_verified_at`
+- `is_primary`
+- `created_at`
+- `updated_at`
 
----
+Телефон:
+- хранится отдельно от публичного профиля
+- в MVP не показывается другим пользователям
+- в MVP не используется для поиска
+- без SMS считается неподтвержденным
 
-## 3. Хранение сообщений (persistent чат)
-- ввести сущности: `User`, `Chat`, `Message`
-- добавить `chat_id` как основу хранения истории
-- подключить PostgreSQL
-- сохранять каждое отправленное сообщение
-- реализовать получение истории сообщений
+## `Chat`
 
-Статус: ✅ завершено
+- `id`
+- `chat_type`
+- `title`
+- `created_at`
+- `last_message_at`
 
-Что уже сделано в рамках этапа:
-- PostgreSQL подключён
-- настроен async SQLAlchemy
-- созданы ORM-модели `User`, `Chat`, `Message`, `ChatMember`
-- таблицы создаются автоматически при старте приложения
-- пользователи, чаты и сообщения создаются через query-функции
-- сообщение успешно отправляется по WebSocket и сохраняется в PostgreSQL
-- история сообщений по `chat_id` работает через HTTP API
-- добавлена базовая пагинация истории через `limit` и `offset`
-- для истории сообщений добавлена ошибка `404`, если чат не найден
-- добавлена таблица membership `ChatMember` и базовая membership-логика
-- сообщение можно отправить только если пользователь состоит в чате
-- реализован `get-or-create` flow для private chat
-- self-chat поддерживается как отдельный полезный сценарий
-- для self-chat добавлен `message_ack`, чтобы не дублировать сообщение как входящее
-- добавлен поиск пользователей по части имени
-- добавлен список чатов пользователя
-- в `Chat` добавлено поле `last_message_at` для сортировки чатов по активности
-- HTTP-роуты вынесены из `api.py` в `app/routers/users.py` и `app/routers/chats.py`
+## `Message`
 
-Следующий фокус:
-- подгрузка истории при открытии чата
-- сообщения, пришедшие пока пользователь был оффлайн
-- стабилизация backend-flow перед мобильным фронтом
-- затем переход к мобильному фронту
-- позже отдельным этапом вернуться к `UUID/public_id`
+- `id`
+- `chat_id`
+- `sender_id`
+- `text`
+- `message_type`
+- `created_at`
+
+## `ChatMember`
+
+- `id`
+- `chat_id`
+- `user_id`
+- `role`
+- `joined_at`
 
 ---
 
-## 4. История сообщений
-- запрос истории по `chat_id`
-- пагинация
+# Текущие HTTP Endpoints
+
+## Auth
+
+`POST /auth/dev-login?phone=...&display_name=...`
+
+Временная dev-ручка без SMS:
+- принимает телефон и display name
+- проверяет телефон через `phonenumbers`
+- приводит телефон к E.164
+- если телефон уже есть в `user_phones`, возвращает существующего пользователя
+- если телефона нет, создает нового пользователя
+- новому пользователю backend генерирует временный username вида `user_a8f31c2d`
+- `is_username_custom = False`
+- `phone_verified = False`
+
+Ответ:
+
+```json
+{
+  "user": {
+    "id": 1,
+    "username": "user_a8f31c2d",
+    "display_name": "Roman",
+    "is_username_custom": false,
+    "phone_verified": false
+  },
+  "created": true
+}
+```
+
+## Users
+
+`POST /users/{username}?display_name=...`
+
+Dev-ручка создания пользователя с уже выбранным публичным username.
+
+`GET /users/search?query=...`
+
+Поиск:
+- работает только по `username`
+- `display_name` в поиске не используется
+- поиск по телефону в MVP не реализуется
+
+## Chats
+
+`POST /private-chats/{user_id}/{peer_user_id}`
+
+Находит или создает private chat.
+
+Возвращает:
+- `id`
+- `chat_type`
+- `title`
+- `peer_user_id`
+- `created_at`
+- `created`
+
+`GET /users/{user_id}/chats`
+
+Возвращает список чатов пользователя.
+
+Для private chat:
+- `display_name` берется из `peer_user.display_name`
+- `peer_user_id` равен id собеседника
+- для self-chat `peer_user_id = null`
+
+`GET /chats/{chat_id}?user_id=...`
+
+Возвращает meta-информацию о чате и требует membership пользователя.
+
+`GET /chats/{chat_id}/messages?user_id=...`
+
+Возвращает историю сообщений и требует membership пользователя.
+
+Если пользователь не участник чата, backend возвращает `403`.
 
 ---
 
-## 5. Чаты
-- личные чаты (1-на-1 через `chat_id`)
-- список чатов пользователя
+# WebSocket
+
+Endpoint:
+
+```text
+WS /ws/{user_id}
+```
+
+Входящий формат:
+
+```json
+{
+  "chat_id": 1,
+  "to_user_id": 2,
+  "text": "hello"
+}
+```
+
+События сервера:
+- `message`
+- `system`
+- `error`
+- `message_ack`
+
+WebSocket перед сохранением сообщения проверяет:
+- пользователь существует
+- чат существует
+- отправитель состоит в чате
+- получатель тоже состоит в этом чате
+
+Self-chat:
+- сообщение сохраняется
+- сервер не дублирует его как входящее
+- вместо этого отправляется `message_ack`
+
+Ограничение:
+- `user_id` все еще приходит от клиента и не является production-auth
+- позже нужно заменить это на `current_user` из полноценного auth-flow
 
 ---
 
-## 6. Группы
-- создание групп
-- добавление пользователей
-- сообщения в группе
+# Структура Проекта
+
+```text
+app/
+├── main.py
+├── websocket.py
+├── models.py
+├── db.py
+├── routers/
+│   ├── __init__.py
+│   ├── auth.py
+│   ├── users.py
+│   └── chats.py
+├── queries/
+│   ├── __init__.py
+│   ├── user_phones.py
+│   ├── users.py
+│   ├── chats.py
+│   ├── messages.py
+│   └── chat_members.py
+└── ws/
+    ├── __init__.py
+    ├── manager.py
+    └── protocol.py
+```
 
 ---
 
-## 7. Ephemeral режим
-- сообщения не сохраняются
-- если пользователь оффлайн — сообщение теряется
-
----
-
-## 8. Пользователи и авторизация
-- поиск по номеру телефона / нику
-- SMS авторизация
-- `device_id`
-
----
-
-## 9. Масштабирование
-- Redis / брокер сообщений
-- несколько инстансов
-
----
-
-## 10. Безопасность
-- подготовка к E2EE
-
----
-
-# Архитектурные решения
-
-## Типы сообщений
-
-### Persistent
-- сообщения сохраняются в БД
-- доступны в истории
-
-### Ephemeral
-- сообщения не сохраняются
-- работают только в realtime
-- если пользователь не онлайн — сообщение теряется
-
-Сейчас реализуется persistent-направление.
-
----
-
-# Текущий этап
-Backend-polish перед мобильным фронтом.
-
-Что реализовано сейчас:
-- установлено WebSocket-соединение
-- реализована отправка сообщений между пользователями
-- добавлена обработка ошибок
-- внедрён `ConnectionManager`
-- введён JSON-протокол сообщений
-- добавлено логирование
-- подключён PostgreSQL
-- настроены `engine`, `AsyncSessionLocal`, `Base`
-- реализованы модели `User`, `Chat`, `Message`, `ChatMember`
-- добавлена инициализация таблиц при старте приложения
-- создана функция `get_db()`
-- создан пакет `app/queries/`
-- реализована query-функция `create_user()`
-- реализованы query-функции `create_chat()`, `get_chat_by_id()`, `create_message()`, `get_message_by_chat_id()`, `get_user_by_id()`
-- реализованы query-функции для `ChatMember` и private chat flow
-- подтверждено, что пользователь сохраняется в PostgreSQL
-- подтверждено, что сообщение отправляется по WebSocket и сохраняется в PostgreSQL
-- добавлена проверка существования пользователя в БД перед сохранением сообщения
-- добавлена проверка существования чата в БД перед сохранением сообщения
-- усилена схема `Chat` и `Message`: добавлены служебные поля для chat-логики и истории
-- добавлена таблица `ChatMember`
-- подтверждено, что история сообщений читается из PostgreSQL по `chat_id`
-- подтверждено, что пагинация истории работает
-- подтверждено, что membership-проверка работает в WebSocket
-- подтверждено, что membership-проверка работает в `GET /chats/{chat_id}`
-- подтверждено, что private chat повторно не создаётся, если уже существует
-- подтверждено, что self-chat создаётся и работает
-- для self-chat вместо повторного входящего сообщения сервер отправляет `message_ack`
-- добавлен поиск пользователей через HTTP
-- добавлен список чатов пользователя с `display_name`, `members_count`, `last_message`
-- добавлено поле `last_message_at` и сортировка чатов по активности
-- `api.py` разнесён на `app/routers/users.py` и `app/routers/chats.py`
-
-Текущий фокус:
-👉 добить backend перед мобильным фронтом:
-- подгрузка истории при открытии чата
-- сообщения, пришедшие пока пользователь был оффлайн
-- понятный сценарий открытия чата: найти пользователя → получить/создать `private chat` → загрузить историю → подключить WebSocket
-
----
-
-# Что уже сделано
-
-## Репозиторий и окружение
-- создан репозиторий на GitHub
-- инициализирован git
-- создана основная ветка `main`
-- создана рабочая ветка `dev`
-- настроено виртуальное окружение `.venv`
-- установлены зависимости `fastapi`, `uvicorn`, `uvicorn[standard]`
-- добавлены зависимости `sqlalchemy`, `asyncpg`, `greenlet`
-- зависимости сохранены в `requirements.txt`
-- создан файл `PROMPT.md` для ведения живого контекста проекта
-
-## База данных
-- установлен и запущен локальный PostgreSQL через Postgres.app
-- создана база `chat_db`
-- подтверждено подключение приложения к `chat_db`
-- подтверждено создание таблиц `users`, `chats`, `messages`, `chat_members`
-- подтверждено сохранение сообщений в таблицу `messages` из WebSocket-потока
-- зафиксировано, что `id` в PostgreSQL sequence могут идти с пропусками после неудачных вставок; это нормально и не считается ошибкой
+# Реализованные Модули
 
 ## `main.py`
-- создан объект `FastAPI`
-- добавлен endpoint `/`
-- подключён WebSocket router
-- подключены HTTP routers `users_router` и `chats_router`
-- добавлен `lifespan`
-- на старте приложения вызывается `init_db()`
 
-## `websocket.py`
-- создан `APIRouter`
-- добавлен WebSocket endpoint `/ws/{user_id}`
-- реализовано подключение пользователя
-- реализована отправка приветственного сообщения клиенту
-- реализован приём JSON-сообщений
-- реализована отправка сообщений между пользователями
-- добавана обработка случая, когда получатель не подключён
-- добавана обработка неверного формата сообщения
-- логика подключений вынесена в `app/ws/manager.py`
-- входящий формат расширен до `chat_id`
-- после успешной отправки сообщение сохраняется в БД
-- перед сохранением проверяется существование пользователя в таблице `users`
-- перед сохранением проверяется существование чата в таблице `chats`
-- перед сохранением проверяется membership пользователя в чате
-
-Добавлены методы:
-- `connect()`
-- `disconnect()`
-- `send_message()`
-- `send_message_to_self()`
-- `send_error()`
-- `send_message_ack()`
-
-## Протокол сообщений
-- входящие сообщения: `{"chat_id": int, "to_user_id": int, "text": str}`
-- исходящие пользовательские: `{"type": "message", "from_user_id": int, "text": str}`
-- исходящие системные: `{"type": "system", "text": str}`
-- добавлена валидация входящих сообщений
-- добавлена обработка невалидного JSON
-- системные сообщения сериализуются с `ensure_ascii=False`
-
-## `db.py`
-- добавлена строка подключения `DATABASE_URL`
-- создан async `engine`
-- создан `AsyncSessionLocal`
-- создан `Base`
-- добавлена функция `init_db()`
-- добавлена функция `get_db()`
+- создает `FastAPI`
+- подключает `auth_router`
+- подключает `users_router`
+- подключает `chats_router`
+- подключает WebSocket router
+- через `lifespan` вызывает `init_db()`
 
 ## `models.py`
-- создана модель `User`
-- создана модель `Chat`
-- создана модель `Message`
-- создана модель `ChatMember`
-- в `Chat` добавлено поле `last_message_at`
-- добавлены внешние ключи:
-  - `Message.chat_id -> chats.id`
-  - `Message.sender_id -> users.id`
-  - `ChatMember.chat_id -> chats.id`
-  - `ChatMember.user_id -> users.id`
+
+- `User`
+- `UserPhone`
+- `Chat`
+- `Message`
+- `ChatMember`
+
+Даты используют `DateTime(timezone=True)`.
 
 ## `queries/users.py`
-- реализована функция `create_user(session, user_name)`
-- реализована функция `get_user_by_id(session, user_id)`
-- реализована функция `search_users_by_name(session, query, limit=20)`
-- реализована функция `get_user_by_name(session, user_name)` без учёта регистра
+
+- `create_user(session, username, display_name, is_username_custom=False)`
+- `get_user_by_id(session, user_id)`
+- `search_users_by_username(session, query, limit=20)`
+- `get_user_by_username(session, username)`
+
+## `queries/user_phones.py`
+
+- `get_user_phone_by_phone(session, phone_e164)`
+- `create_user_phone(session, user_id, phone_e164)`
 
 ## `queries/chats.py`
-- реализована функция `create_chat(session, chat_type, title=None)`
-- реализована функция `get_chat_by_id(session, chat_id)`
-- реализована функция `get_chats_by_user_id(session, user_id)`
-- список чатов сортируется по `last_message_at`, затем по `created_at`
+
+- `create_chat(session, chat_type, title=None)`
+- `get_chat_by_id(session, chat_id)`
+- `get_private_chat_between_users(session, user_id, peer_user_id)`
+- `get_chats_by_user_id(session, user_id)`
+- `get_chat_meta_by_id(session, chat_id)`
 
 ## `queries/messages.py`
-- реализована функция `create_message(session, chat_id, sender_id, text, message_type='text')`
-- реализована функция `get_message_by_chat_id(session, chat_id, limit=50, offset=0)`
-- реализована функция `get_last_message_by_chat_id(session, chat_id)`
-- при создании сообщения обновляется `Chat.last_message_at`
 
-## `routers/users.py`
-- HTTP router для пользователей
-- рабочий endpoint `POST /users/{user_name}`
-- рабочий endpoint `GET /users/search?query=...`
-- нормализация и валидация `user_name`
-- валидация search query
-
-## `routers/chats.py`
-- HTTP router для чатов
-- рабочий endpoint `GET /chats/{chat_id}/messages`
-- рабочий endpoint `POST /private-chats/{user_id}/{peer_user_id}`
-- рабочий endpoint `GET /users/{user_id}/chats`
-
----
-
-# Текущая структура проекта
-chat/
-├── app/
-│   ├── main.py
-│   ├── websocket.py
-│   ├── models.py
-│   ├── db.py
-│   ├── routers/
-│   │   ├── __init__.py
-│   │   ├── users.py
-│   │   └── chats.py
-│   ├── ws/
-│   │   ├── __init__.py
-│   │   ├── manager.py
-│   │   └── protocol.py
-│   └── queries/
-│       ├── __init__.py
-│       ├── users.py
-│       ├── chats.py
-│       ├── messages.py
-│       └── chat_members.py
-├── .venv/
-├── requirements.txt
-├── run.py
-├── README.md
-├── PROMPT.md
-├── .gitignore
-
----
-
-# Выбранный стек
-- Язык: Python 3.12
-- Backend: FastAPI
-- Realtime: WebSocket
-- ASGI сервер: uvicorn
-- База данных: PostgreSQL
-- ORM: SQLAlchemy 2.x
-- DB driver: asyncpg
-- Инфраструктура: Docker (позже)
-- Авторизация: SMS OTP (позже)
-
----
-
-# Что реализовано в коде на данный момент
-
-## `main.py`
-Содержит:
-- создание FastAPI-приложения
-- HTTP endpoint `/`
-- подключение `users_router`
-- подключение `chats_router`
-- подключение WebSocket router
-- startup-инициализацию БД через `lifespan`
-
-## `websocket.py`
-Содержит:
-- WebSocket endpoint `/ws/{user_id}`
-- использование `ConnectionManager` из `ws/manager.py`
-- парсинг JSON-сообщений через `ws/protocol.py`
-- валидацию структуры входящих сообщений
-- отправку сообщений в формате JSON
-
-## `db.py`
-Содержит:
-- `DATABASE_URL`
-- async `engine`
-- `AsyncSessionLocal`
-- `Base`
-- `init_db()`
-- `get_db()`
-
-## `models.py`
-Содержит:
-- ORM-модель `User`
-- ORM-модель `Chat`
-- ORM-модель `Message`
-- ORM-модель `ChatMember`
-- поле `Chat.last_message_at`
-
-## `queries/users.py`
-Содержит:
-- функцию `create_user(session, user_name)`
-- функцию `get_user_by_id(session, user_id)`
-- функцию `search_users_by_name(session, query, limit=20)`
-- функцию `get_user_by_name(session, user_name)`
-
-## `queries/chats.py`
-Содержит:
-- функцию `create_chat(session, chat_type, title=None)`
-- функцию `get_chat_by_id(session, chat_id)`
-- функцию `get_chats_by_user_id(session, user_id)`
-- функцию поиска существующего private chat между двумя пользователями
-
-## `queries/messages.py`
-Содержит:
-- функцию `create_message(session, chat_id, sender_id, text, message_type='text')`
-- функцию `get_message_by_chat_id(session, chat_id, limit=50, offset=0)`
-- функцию `get_last_message_by_chat_id(session, chat_id)`
+- `create_message(session, chat_id, sender_id, text, message_type='text')`
+- `get_message_by_chat_id(session, chat_id, limit=50, offset=0)`
+- `get_last_message_by_chat_id(session, chat_id)`
 
 ## `queries/chat_members.py`
-Содержит:
-- функцию `add_chat_member(session, chat_id, user_id, role='member')`
-- функцию `get_chat_member(session, chat_id, user_id)`
-- функцию `get_chat_members(session, chat_id)`
+
+- `add_chat_member(session, chat_id, user_id, role='member')`
+- `get_chat_member(session, chat_id, user_id)`
+- `get_chat_members(session, chat_id)`
+
+## `routers/auth.py`
+
+- dev-login по телефону
+- нормализация телефона через `phonenumbers`
+- генерация временного username
+- возврат существующего пользователя при повторном входе по телефону
 
 ## `routers/users.py`
-Содержит:
-- рабочий endpoint `POST /users/{user_name}`
-- рабочий endpoint `GET /users/search?query=...`
-- нормализацию и валидацию `user_name`
-- валидацию search query
+
+- создание пользователя с username
+- поиск пользователей по username
+- валидация username
+- валидация display_name
 
 ## `routers/chats.py`
-Содержит:
-- рабочий endpoint `GET /chats/{chat_id}/messages`
-- рабочий endpoint `POST /private-chats/{user_id}/{peer_user_id}`
-- рабочий endpoint `GET /users/{user_id}/chats`
 
-## `ws/manager.py`
-Содержит:
-- `ConnectionManager`
-- отправку `system`, `error` и `message_ack` payload
+- chat meta
+- history
+- private chat get-or-create
+- chat list
+- `peer_user_id` в private chat/list response
+- membership check для истории
 
-## `ws/protocol.py`
-Содержит:
-- `parse_message(...)` для разбора входящих WebSocket-сообщений
+## `websocket.py`
 
----
-
-# Текущее поведение системы
-
-## WebSocket
-1. Пользователь подключается:
-   `/ws/1`
-
-2. Получает системное сообщение:
-   `Подключение с сервером установлено!`
-
-3. Отправляет:
-   `{"chat_id": 1, "to_user_id": 2, "text": "hello"}`
-
-4. Пользователь 2 получает:
-   `{"type": "message", "from_user_id": 1, "text": "hello"}`
-
-5. Если пользователь-получатель не подключён:
-   сервер отправляет `error`-payload о недоступности получателя
-
-6. Если формат неверный:
-   сервер отправляет `error`-payload об ошибке формата
-
-7. Если пользователь, от имени которого открыт WebSocket, не найден в таблице `users`:
-   сообщение не сохраняется, сервер отправляет `error`-payload
-
-8. После успешной отправки сообщение сохраняется в таблицу `messages`
-
-9. Если пользователь не состоит в чате:
-   сообщение не сохраняется, сервер отправляет `error`-payload
-
-10. В self-chat сообщение сохраняется, но сервер не дублирует его как входящее:
-    вместо этого отправляется `message_ack`
-
-## HTTP
-- `POST /users/{user_name}` создаёт пользователя в PostgreSQL и остаётся рабочей ручкой на текущем этапе
-- `GET /users/search?query=...` ищет пользователей по части имени
-- `GET /users/{user_id}/chats` возвращает список чатов пользователя
-- `GET /chats/{chat_id}?user_id=...` возвращает мета-информацию о чате и требует membership пользователя в этом чате
-- `GET /chats/{chat_id}/messages` возвращает историю сообщений
-- `POST /private-chats/{user_id}/{peer_user_id}` находит или создаёт личный чат между двумя пользователями
+- WebSocket endpoint `/ws/{user_id}`
+- прием JSON-сообщений
+- сохранение сообщений
+- membership checks
+- recipient membership check
+- `message_ack` для self-chat
 
 ---
 
-# Ближайшая задача
-Следующий шаг в разработке:
+# Что Проверять Перед Коммитом
 
-Фокус:
-👉 подгрузка истории при открытии чата и оффлайн-сценарий для MVP
+```http
+POST http://localhost:8000/auth/dev-login?phone=%2B79991234567&display_name=Roman
+POST http://localhost:8000/auth/dev-login?phone=%2B79991234567&display_name=Roman
+POST http://localhost:8000/private-chats/1/2
+GET http://localhost:8000/users/1/chats
+GET http://localhost:8000/chats/1/messages?user_id=1
+GET http://localhost:8000/chats/1/messages?user_id=3
+```
 
-Следующие шаги:
-- продумать flow открытия чата на фронте: поиск пользователя → private chat → история → WebSocket
-- подгружать историю при открытии чата
-- решить, как показывать сообщения, пришедшие пока пользователь был оффлайн
-- настроить линтеры и базовую проверку качества кода
-- unit/integration тесты оставить отдельным следующим этапом после текущего backend-polish
-- затем переходить к мобильному фронту
+Ожидания:
+- первый `dev-login` возвращает `created: true`
+- второй `dev-login` с тем же телефоном возвращает `created: false`
+- список чатов содержит `peer_user_id`
+- история для участника работает
+- история для чужого пользователя возвращает `403`
 
----
+Синтаксическая проверка:
 
-# Правила разработки
-- двигаться очень маленькими шагами
-- один шаг = одно понятное действие
-- сначала добиться рабочего состояния, потом улучшать
-- не писать лишний код наперёд
-- после важных этапов обновлять `PROMPT.md`
-- по возможности фиксировать прогресс коммитами
-- все новые конструкции и методы объяснять простыми словами
-- в конце шага фиксировать прогресс по большому этапу
+```bash
+./.venv/bin/python -m compileall app
+```
 
 ---
 
-# Как общаться с разработчиком (AI)
-Важно: разработчик — junior и находится в режиме обучения.
+# Важные Ограничения MVP
 
-Правила общения:
-- давать по 1 шагу за раз
-- писать коротко и без перегруза
-- объяснять:
-  - что делаем
-  - зачем делаем
-  - как это работает
-- все новые функции, методы и конструкции Python / FastAPI / SQLAlchemy объяснять простыми словами
-- код отдавать в markdown-блоках
-- в конце шага показывать прогресс по большому этапу
-- не писать много шагов сразу
-- не вставлять большой код без прямой необходимости
+- SMS-auth пока не реализован
+- JWT/session-auth пока не реализованы
+- `user_id` в path/query/WebSocket пока приходит от клиента
+- phone visibility/discoverability заложены как будущая идея, но в MVP выключены
+- поиск по телефону не реализуется
+- отображение телефона другим пользователям не реализуется
+- `UUID/public_id` пока не вводим
+- внутренний `int id` остается рабочим контрактом
+- Redis / брокер сообщений пока не используются
+- Docker / production deploy пока не делаем
+- E2EE пока не делаем
+- группы пока не делаем
 
 ---
 
-# Что важно не забыть позже
-- авторизация по SMS
-- хранение устройств (`device_id`)
-- хранение публичных ключей для будущего E2EE
-- offline-сообщения
-- настройка линтеров (`ruff` / `black` или аналогичный набор)
-- unit/integration тесты на ключевые backend-сценарии
-- доставка сообщений конкретному пользователю
-- позже перейти от внутренних `int id` к `UUID/public_id`, если это понадобится для внешнего API
-- список чатов пользователя
-- участие пользователей в чатах
-- групповые чаты
-- масштабирование через Redis
-- дальнейшее развитие `ConnectionManager`
-- Docker и базовая инфраструктура
+# Backend Backlog
+
+Ближайшее:
+- добавить endpoint смены username
+- добавить стабильные error codes вместо завязки клиента на текст ошибки
+- позже заменить `user_id` из query/path/WebSocket на `current_user` из auth
+- позже добавить SMS/OTP, rate limits и полноценный auth-flow
+- позже вернуться к `UUID/public_id`, если потребуется внешний opaque identifier
+
+Для iOS после закрытия ветки:
+- перейти на `POST /auth/dev-login`
+- обновить модели под `username`, `display_name`, `is_username_custom`, `phone_verified`
+- подключить поиск по `username`
+- создавать/открывать private chat
+- загружать историю через `GET /chats/{chat_id}/messages?user_id=...`
+- подключить отправку сообщений и WebSocket
+
+Позже:
+- хранение устройств
+- offline-сценарии
+- настройки видимости телефона
+- настройки поиска по телефону
 - тесты на API и WebSocket
-
----
-
-# Текущее состояние архитектуры
-
-Сейчас логика проекта разделена на несколько слоёв:
-
-- `websocket.py`
-  - принимает подключение
-  - получает входящие сообщения
-  - проверяет формат
-  - вызывает методы manager
-
-- `ConnectionManager`
-  - хранит активные соединения
-  - подключает пользователя
-  - отключает пользователя
-  - отправляет сообщения другому пользователю
-  - отправляет сообщения текущему клиенту
-
-- `db.py`
-  - хранит конфигурацию подключения к PostgreSQL
-  - создаёт `engine`
-  - создаёт фабрику сессий
-  - инициализирует таблицы
-
-- `models.py`
-  - описывает таблицы БД через ORM-модели
-
-- `queries/`
-  - хранит функции для работы с конкретными таблицами
-
-- `routers/`
-  - содержит HTTP endpoints, разбитые по ответственности на `users.py` и `chats.py`
-
----
-
-# Текущий статус
-
-WebSocket слой стабилизирован:
-- есть логирование
-- есть обработка ошибок
-- есть единый протокол
-
-DB слой подключён и уже частично проверен:
-- PostgreSQL работает локально через `chat_db`
-- таблицы создаются автоматически
-- пользователи и чаты создаются через HTTP API
-- сообщения отправляются по WebSocket и сохраняются в PostgreSQL
-- история сообщений читается по `chat_id`
-- пагинация истории работает через `limit` и `offset`
-
-Следующий этап:
-👉 `ChatMember`, создание личных/групповых чатов и следующий шаг к списку чатов пользователя
+- линтеры и форматирование
+- Alembic migrations
+- Docker и базовая инфраструктура
+- Redis / broker для нескольких backend-инстансов
+- E2EE
