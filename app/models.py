@@ -13,7 +13,8 @@ class User(Base):
     # Уникальный публичный username. В UI показывается как @username.
     username: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     # Имя пользователя для отображения на фронте.
-    display_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Может быть пустым, если пользователь еще не заполнил профиль.
+    display_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # False означает, что username был создан backend автоматически.
     # True означает, что пользователь сам выбрал публичный @username
     is_username_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
