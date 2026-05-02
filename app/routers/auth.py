@@ -39,22 +39,14 @@ def generate_default_username() -> str:
 @router.post('/auth/dev-login')
 async def dev_login_endpoint(
         phone: str,
-        display_name: str,
         session: AsyncSession = Depends(get_db),
 ):
     normalized_phone = normalize_phone(phone)
-    normalized_display_name = ' '.join(display_name.strip().split())
 
     if normalized_phone is None:
         raise HTTPException(
             status_code=422,
             detail='Phone must be valid and include country code, for example +79991234567',
-        )
-
-    if len(normalized_display_name) < 3:
-        raise HTTPException(
-            status_code=422,
-            detail='Display name must contain at least 3 characters',
         )
 
     existing_phone = await get_user_phone_by_phone(session, normalized_phone)
@@ -82,7 +74,7 @@ async def dev_login_endpoint(
     user = await create_user(
         session=session,
         username=generate_default_username(),
-        display_name=normalized_display_name,
+        display_name=None,
         is_username_custom=False,
     )
 

@@ -4,11 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import User
 
 
-# Создает пользователя с username и отображаемым именем.
+# Создает пользователя с username и опциональным отображаемым именем.
 async def create_user(
         session: AsyncSession,
         username: str,
-        display_name: str,
+        display_name: str | None,
         is_username_custom: bool = False,
 ):
     user = User(
