@@ -46,7 +46,7 @@ async def get_chat_meta_endpoint(
             peer_user = await get_user_by_id(session, peer_member.user_id)
 
             if peer_user is not None:
-                display_name = peer_user.user_name
+                display_name = peer_user.display_name
 
     if not display_name:
         display_name = f'Chat {chat.id}'
@@ -66,14 +66,18 @@ async def get_chat_meta_endpoint(
 @router.get('/chats/{chat_id}/messages')
 async def get_chat_message_endpoint(
         chat_id: int,
+        user_id: int,
         limit: int = 50,
         offset: int = 0,
         session: AsyncSession = Depends(get_db),
 ):
     chat = await get_chat_by_id(session, chat_id)
-
     if chat is None:
         raise HTTPException(status_code=404, detail='Chat not found')
+
+    chat_member = await get_chat_member(session, chat_id, user_id)
+    if chat_member is None:
+        raise HTTPException(status_code=403, detail='User is not a member of this chat')
 
     messages = await get_message_by_chat_id(
         session=session,
@@ -118,6 +122,7 @@ async def get_or_create_private_chat_endpoint(
             'id': existing_chat.id,
             'chat_type': existing_chat.chat_type,
             'title': existing_chat.title,
+            'peer_user_id': peer_user_id,
             'created_at': existing_chat.created_at,
             'created': False,
         }
@@ -136,6 +141,7 @@ async def get_or_create_private_chat_endpoint(
         'id': chat.id,
         'chat_type': chat.chat_type,
         'title': chat.title,
+        'peer_user_id': peer_user_id,
         'created_at': chat.created_at,
         'created': True,
     }
@@ -160,6 +166,7 @@ async def get_user_chats_endpoint(
         last_message = await get_last_message_by_chat_id(session, chat.id)
 
         display_name = chat.title
+        peer_user_id = None
 
         if chat.chat_type == 'private':
             peer_member = next((member for member in members if member.user_id != user_id), None)
@@ -167,10 +174,11 @@ async def get_user_chats_endpoint(
             if peer_member is None:
                 display_name = 'Saved Messages'
             else:
+                peer_user_id = peer_member.user_id
                 peer_user = await get_user_by_id(session, peer_member.user_id)
 
                 if peer_user is not None:
-                    display_name = peer_user.user_name
+                    display_name = peer_user.display_name
 
         if not display_name:
             display_name = f'Chat {chat.id}'
@@ -181,6 +189,7 @@ async def get_user_chats_endpoint(
                 'chat_type': chat.chat_type,
                 'title': chat.title,
                 'display_name': display_name,
+                'peer_user_id': peer_user_id,
                 'members_count': len(members),
                 'created_at': chat.created_at,
                 'last_message': None if last_message is None else {
@@ -194,4 +203,3 @@ async def get_user_chats_endpoint(
         )
 
     return response
-
