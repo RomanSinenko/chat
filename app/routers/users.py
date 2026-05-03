@@ -118,10 +118,7 @@ async def search_users_endpoint(
         raise HTTPException(status_code=422, detail='Query must not be empty')
 
     if len(normalized_query) < USER_SEARCH_MIN_LENGTH:
-        raise HTTPException(
-            status_code=422,
-            detail=f'Query must contain at least {USER_SEARCH_MIN_LENGTH} characters',
-        )
+        return []
 
     if len(normalized_query) > USER_SEARCH_MAX_LENGTH:
         raise HTTPException(
