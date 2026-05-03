@@ -106,11 +106,10 @@ async def create_user_endpoint(
     }
 
 
-# Рабочая ручка: ищет пользователя по части username.
+# Рабочая ручка: ищет пользователя по точному публичному username.
 @router.get('/users/search')
 async def search_users_endpoint(
         query: str,
-        limit: int = 20,
         session: AsyncSession = Depends(get_db),
 ):
     normalized_query = normalize_search_query(query)
@@ -139,7 +138,6 @@ async def search_users_endpoint(
     users = await search_users_by_username(
         session=session,
         query=normalized_query,
-        limit=limit,
     )
 
     return [
