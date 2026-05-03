@@ -31,21 +31,28 @@ async def get_user_by_id(session: AsyncSession, user_id: int):
 
     return result.scalar_one_or_none()
 
-# Ищет пользователей только по публичному username.
+
+# Ищет только точное совпадение публичного custom username.
 async def search_users_by_username(
         session: AsyncSession,
         query: str,
-        limit: int = 20,
 ):
     stmt = (
         select(User)
-        .where(User.username.ilike(f'%{query}%'))
-        .order_by(User.id)
-        .limit(limit)
+        .where(
+            func.lower(User.username) == query.lower(),
+            User.is_username_custom.is_(True),
+        )
+        .limit(1)
     )
     result = await session.execute(stmt)
 
-    return result.scalars().all()
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        return []
+
+    return [user]
 
 
 # Ищет пользователя по username без учета регистра.
