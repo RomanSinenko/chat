@@ -100,3 +100,29 @@ async def get_active_user_session_by_id(session: AsyncSession, session_id: int):
         await session.refresh(user_session)
 
     return user_session
+
+
+# Отзывает одну конкретную сессию по id.
+# Используется при logout: пользователь выходит только из текущего устройства/сессии.
+async def revoke_user_session_by_id(session: AsyncSession, session_id: int):
+    now = datetime.now(UTC)
+
+    stmt = (
+        select(UserSession)
+        .where(UserSession.id == session_id)
+        .where(UserSession.revoked_at.is_(None))
+    )
+
+    result = await session.execute(stmt)
+    user_session = result.scalar_one_or_none()
+
+    if user_session is None:
+        return None
+
+    user_session.revoked_at = now
+
+    await session.commit()
+    await session.refresh(user_session)
+
+    return user_session
+
