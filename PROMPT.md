@@ -5,14 +5,10 @@ Backend MVP чат-приложения с realtime-обменом по WebSocke
 Путь:
 - `/Users/romansinenko/Desktop/prog/Chat/backend`
 
-Текущая ветка:
-- `backend-phone-only-dev-login`
-
-Цель текущей ветки:
-- подготовить backend-контракты под дальнейшую iOS-интеграцию
-- разделить identity-модель пользователя
-- добавить временный dev-login по телефону
-- закрыть базовые contract/security блокеры перед продолжением iOS
+Текущий backend-статус:
+- WebSocket-контракт отправки сообщений под iOS готов для следующего iOS-шага
+- минимальный session-auth foundation для HTTP/WebSocket добавлен
+- активный следующий шаг находится на стороне iOS: обновить HTTP-контракты под `Authorization` и подключить отправку через WebSocket
 
 ---
 
@@ -99,10 +95,10 @@ python3 run.py
 
 ## Auth
 
-`POST /auth/dev-login?phone=...`
+`POST /auth/dev-login`
 
 Временная dev-ручка без SMS:
-- принимает только телефон
+- принимает JSON body с телефоном
 - проверяет телефон через `phonenumbers`
 - приводит телефон к E.164
 - если телефон уже есть в `user_phones`, возвращает существующего пользователя
@@ -111,6 +107,15 @@ python3 run.py
 - `display_name = null`, профиль пользователь заполнит позже в Settings
 - `is_username_custom = False`
 - `phone_verified = False`
+- возвращает `session_token` для защищенных HTTP-ручек и WebSocket
+
+Body:
+
+```json
+{
+  "phone": "+79991234567"
+}
+```
 
 Ответ:
 
@@ -122,16 +127,13 @@ python3 run.py
     "display_name": null,
     "is_username_custom": false,
     "phone_verified": false
-  },
+	  },
+  "session_token": "plaintext_token_returned_once",
   "created": true
 }
 ```
 
 ## Users
-
-`POST /users/{username}?display_name=...`
-
-Dev-ручка создания пользователя с уже выбранным публичным username.
 
 `GET /users/search?query=...`
 
@@ -139,6 +141,8 @@ Dev-ручка создания пользователя с уже выбран�
 - работает только по `username`
 - `display_name` в поиске не используется
 - поиск по телефону в MVP не реализуется
+- требует `Authorization: Bearer <session_token>`
+- исключает текущего пользователя из результатов поиска
 
 Целевое правило global search:
 - глобальный поиск ищет только точное совпадение `username`
@@ -168,9 +172,18 @@ Discovery-основания:
 
 ## Chats
 
-`POST /private-chats/{user_id}/{peer_user_id}`
+`POST /private-chats`
 
 Находит или создает private chat.
+Текущий пользователь берется из `Authorization`, а `peer_user_id` приходит в JSON body.
+
+Body:
+
+```json
+{
+  "peer_user_id": 2
+}
+```
 
 Возвращает:
 - `id`
@@ -180,9 +193,9 @@ Discovery-основания:
 - `created_at`
 - `created`
 
-`GET /users/{user_id}/chats`
+`GET /users/me/chats`
 
-Возвращает список чатов пользователя.
+Возвращает список чатов текущего пользователя из active session.
 
 Для private chat:
 - `display_name` строится через `app/services/peer_presentation.py`
@@ -190,13 +203,13 @@ Discovery-основания:
 - `peer_user_id` равен id собеседника
 - для self-chat `peer_user_id = null`
 
-`GET /chats/{chat_id}?user_id=...`
+`GET /chats/{chat_id}`
 
-Возвращает meta-информацию о чате и требует membership пользователя.
+Возвращает meta-информацию о чате и требует membership текущего пользователя.
 
-`GET /chats/{chat_id}/messages?user_id=...`
+`GET /chats/{chat_id}/messages?limit=50&offset=0`
 
-Возвращает историю сообщений и требует membership пользователя.
+Возвращает историю сообщений и требует membership текущего пользователя.
 
 Если пользователь не участник чата, backend возвращает `403`.
 
@@ -204,27 +217,97 @@ Discovery-основания:
 
 # WebSocket
 
-Endpoint:
+Текущий endpoint:
 
 ```text
-WS /ws/{user_id}
+WS /ws
 ```
 
-Входящий формат:
+Header:
+
+```http
+Authorization: Bearer <session_token>
+```
+
+Важно:
+- WebSocket определяет пользователя по active session token
+- `user_id` из URL больше не используется
+- при revoked/expired session socket получает ошибку и закрывается
+
+Целевой входящий формат отправки сообщения:
 
 ```json
 {
+  "type": "send_message",
+  "client_message_id": "ios-local-id-123",
   "chat_id": 1,
   "to_user_id": 2,
   "text": "hello"
 }
 ```
 
+Поля:
+- `type = "send_message"` — тип клиентского события
+- `client_message_id` — локальный id сообщения на клиенте, нужен для связи optimistic UI и backend ack
+- `chat_id` — id чата
+- `to_user_id` — id получателя
+- `text` — текст сообщения
+
+Валидация текста:
+- `text.strip()` не должен быть пустым
+- максимальная длина для MVP: `4000` символов
+- пустые сообщения и строки из пробелов не сохраняются
+
 События сервера:
 - `message`
 - `system`
 - `error`
 - `message_ack`
+
+Целевой `message_ack` отправителю после успешного сохранения:
+
+```json
+{
+  "type": "message_ack",
+  "client_message_id": "ios-local-id-123",
+  "chat_id": 1,
+  "message_id": 55,
+  "status": "saved",
+  "created_at": "2026-05-10T12:00:00Z"
+}
+```
+
+Правило:
+- `message_ack` отправляется всегда после сохранения сообщения
+- `saved` означает, что backend принял и записал сообщение в БД
+- `saved` не означает, что получатель уже получил или прочитал сообщение
+
+Целевой `message` online-получателю:
+
+```json
+{
+  "type": "message",
+  "message": {
+    "id": 55,
+    "chat_id": 1,
+    "sender_id": 2,
+    "text": "hello",
+    "message_type": "text",
+    "created_at": "2026-05-10T12:00:00Z"
+  }
+}
+```
+
+Правило:
+- `chat_id` обязателен, чтобы iOS мог обновить список чатов и поднять нужный чат наверх
+- если получатель offline, это не ошибка сохранения
+- offline recipient не должен превращать успешное сохранение в failed send
+- delivered/read статусы будут отдельным будущим шагом
+- offline delivery будет отдельным будущим шагом:
+  - сейчас offline recipient не считается ошибкой, если сообщение сохранено
+  - backend пока не досылает сохраненные сообщения при повторном WebSocket-подключении получателя
+  - получатель увидит сообщение через загрузку истории
+  - позже нужно спроектировать sync непрочитанных сообщений, unread counters и delivered/read statuses
 
 WebSocket перед сохранением сообщения проверяет:
 - пользователь существует
@@ -235,11 +318,13 @@ WebSocket перед сохранением сообщения проверяе�
 Self-chat:
 - сообщение сохраняется
 - сервер не дублирует его как входящее
-- вместо этого отправляется `message_ack`
+- вместо этого отправителю отправляется `message_ack`
 
-Ограничение:
-- `user_id` все еще приходит от клиента и не является production-auth
-- позже нужно заменить это на `current_user` из полноценного auth-flow
+Logging/security:
+- не логировать полный текст сообщений
+- в логах допустимы metadata: `user_id`, `chat_id`, `message_id`, длина текста
+- внешние ошибки должны быть стабильными кодами и не раскрывать лишние внутренние детали
+- подробности можно писать только в server logs
 
 ---
 
@@ -331,14 +416,18 @@ app/
 ## `routers/auth.py`
 
 - dev-login по телефону
+- телефон принимается через JSON body
+- выдача `session_token`
+- отзыв старых active sessions при повторном login
 - нормализация телефона через `phonenumbers`
 - генерация временного username
 - возврат существующего пользователя при повторном входе по телефону
 
 ## `routers/users.py`
 
-- создание пользователя с username
-- поиск пользователей по username
+- поиск пользователей по публичному custom username
+- защищено через `Authorization: Bearer <session_token>`
+- текущий пользователь исключается из результатов
 - валидация username
 - валидация display_name
 
@@ -347,12 +436,15 @@ app/
 - chat meta
 - history
 - private chat get-or-create
+- `POST /private-chats` принимает `peer_user_id` в JSON body
+- текущий пользователь берется из active session
 - `peer_user_id` в private chat response
 - membership check для истории
 
 ## `routers/chat_list.py`
 
-- список чатов пользователя через `GET /users/{user_id}/chats`
+- список чатов пользователя через `GET /users/me/chats`
+- текущий пользователь берется из active session
 - `peer_user_id` в chat list response
 - `display_name` для private chat строится через `get_peer_display_name`
 
@@ -364,34 +456,42 @@ app/
 
 ## `websocket.py`
 
-- WebSocket endpoint `/ws/{user_id}`
+- WebSocket endpoint `/ws`
+- подключение требует `Authorization: Bearer <session_token>`
+- активная session проверяется при подключении и перед каждым входящим сообщением
 - прием JSON-сообщений
 - сохранение сообщений
 - membership checks
 - recipient membership check
-- `message_ack` для self-chat
+- всегда отправляет `message_ack` после успешного сохранения
+- online-получателю отправляет полноценное `message` событие с `id`, `chat_id`, `sender_id`, `text`, `message_type`, `created_at`
 
 ---
 
 # Что Проверять Перед Коммитом
 
 ```http
-POST http://localhost:8000/auth/dev-login?phone=%2B79991234567
-POST http://localhost:8000/auth/dev-login?phone=%2B79991234567
-POST http://localhost:8000/private-chats/1/2
-GET http://localhost:8000/users/1/chats
-GET http://localhost:8000/chats/1/messages?user_id=1
-GET http://localhost:8000/chats/1/messages?user_id=3
+POST http://localhost:8000/auth/dev-login
+GET http://localhost:8000/users/search?query=roman
+POST http://localhost:8000/private-chats
+GET http://localhost:8000/users/me/chats
+GET http://localhost:8000/chats/1
+GET http://localhost:8000/chats/1/messages?limit=50&offset=0
+WS ws://localhost:8000/ws
 ```
 
 Ожидания:
 - первый `dev-login` возвращает `created: true`
 - второй `dev-login` с тем же телефоном возвращает `created: false`
 - новый пользователь получает `display_name: null`
+- защищенные HTTP-ручки без токена возвращают `401`
+- revoked/expired token возвращает `401`
 - список чатов содержит `peer_user_id`
 - список чатов показывает `display_name`, если он есть, иначе `username`
 - история для участника работает
 - история для чужого пользователя возвращает `403`
+- WebSocket без токена возвращает `missing_token`
+- WebSocket с revoked/expired token возвращает `invalid_token` или `session_inactive`
 
 Синтаксическая проверка:
 
@@ -404,8 +504,9 @@ GET http://localhost:8000/chats/1/messages?user_id=3
 # Важные Ограничения MVP
 
 - SMS-auth пока не реализован
-- JWT/session-auth пока не реализованы
-- `user_id` в path/query/WebSocket пока приходит от клиента
+- JWT пока не реализован
+- session-auth foundation реализован через `user_sessions` и `Authorization: Bearer <session_token>`
+- активна MVP-логика: один active session token на пользователя, новый login отзывает старые сессии
 - phone visibility/discoverability заложены как будущая идея, но в MVP выключены
 - поиск по телефону не реализуется
 - отображение телефона другим пользователям не реализуется
@@ -418,28 +519,56 @@ GET http://localhost:8000/chats/1/messages?user_id=3
 
 ---
 
+# Последний Завершенный Backend-Шаг
+
+Сделано в `backend-websocket-message-contract-polish`:
+- добавлен session-auth foundation через `user_sessions`
+- `POST /auth/dev-login` возвращает `session_token`
+- HTTP-ручки переведены на `Authorization: Bearer <session_token>`
+- WebSocket переведен на `/ws` + `Authorization`
+- входящий WebSocket event обновлен до `type = send_message`
+- добавлен `client_message_id`
+- текст валидируется: trim, не пустой, max 4000
+- всегда отправляется `message_ack` после сохранения
+- online-получателю отправляется полноценное `message` событие
+- offline-получатель не считается ошибкой сохранения
+- убрано логирование полного текста сообщений
+- добавлены учебные комментарии в измененные backend-модули
+
+---
+
 # Backend Backlog
 
 Ближайшее:
 - добавить endpoint смены username
+- добавить endpoint изменения display_name
+- добавить logout/revoke текущей сессии
 - добавить стабильные error codes вместо завязки клиента на текст ошибки
-- позже заменить `user_id` из query/path/WebSocket на `current_user` из auth
 - позже добавить SMS/OTP, rate limits и полноценный auth-flow
 - позже вернуться к `UUID/public_id`, если потребуется внешний opaque identifier
 
-Для iOS после закрытия ветки:
-- использовать `POST /auth/dev-login?phone=...`
+Для следующего iOS-шага:
+- использовать `POST /auth/dev-login` с JSON body `{ "phone": "+79991703321" }`
+- хранить `session_token` и передавать его в `Authorization: Bearer <session_token>`
 - модель `display_name` должна быть nullable
 - подключить поиск по `username`
 - создавать/открывать private chat
-- загружать историю через `GET /chats/{chat_id}/messages?user_id=...`
+- загружать историю через `GET /chats/{chat_id}/messages?limit=50&offset=0`
 - подключить отправку сообщений и WebSocket
 
 Позже:
 - хранение устройств
 - offline-сценарии
+- offline delivery после повторного подключения WebSocket
+- sync непрочитанных сообщений
+- unread counters
+- delivered/read statuses
+- удаление чата должно быть per-user: если пользователь удалил чат у себя, чат пропадает только из его списка, но остается у второго участника, если второй его не удалял
+- пустой private chat без сообщений не должен отображаться в списке чатов; желательно не сохранять его как полноценный чат до первого отправленного сообщения
+- первое сообщение в новый private chat должно атомарно создать чат, добавить участников и сохранить сообщение, после чего `message_ack` должен вернуть реальный `chat_id`
 - настройки видимости телефона
 - настройки поиска по телефону
+- smart search: `Elena` / `Елена`, `ё/е`, Unicode-normalization, пробелы, транслитерация и возможные опечатки
 - тесты на API и WebSocket
 - линтеры и форматирование
 - Alembic migrations

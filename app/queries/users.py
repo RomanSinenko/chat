@@ -36,15 +36,22 @@ async def get_user_by_id(session: AsyncSession, user_id: int):
 async def search_users_by_username(
         session: AsyncSession,
         query: str,
+        exclude_user_id: int | None = None,
 ):
+
     stmt = (
         select(User)
         .where(
             func.lower(User.username) == query.lower(),
             User.is_username_custom.is_(True),
         )
-        .limit(1)
     )
+
+    if exclude_user_id is not None:
+        stmt = stmt.where(User.id != exclude_user_id)
+
+    stmt = stmt.limit(1)
+
     result = await session.execute(stmt)
 
     user = result.scalar_one_or_none()

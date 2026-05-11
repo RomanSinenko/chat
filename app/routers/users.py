@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.queries.users import create_user, search_users_by_username, get_user_by_username
+from app.queries.users import search_users_by_username
+from app.dependencies.auth import get_current_user_session
+from app.models import UserSession
 
 
 router = APIRouter()
@@ -37,81 +39,14 @@ def is_valid_search_query(query: str) -> bool:
     return is_valid_username(query)
 
 
-# Рабочая ручка: создаёт пользователя.
-@router.post('/users/{username}')
-async def create_user_endpoint(
-        username: str,
-        display_name: str,
-        session: AsyncSession = Depends(get_db),
-):
-    normalized_username = normalize_username(username)
-    normalized_display_name = normalize_display_name(display_name)
-
-    if len(normalized_username) < USERNAME_MIN_LENGTH:
-        raise HTTPException(
-            status_code=422,
-            detail=f'Username must contain at least {USERNAME_MIN_LENGTH} characters',
-        )
-
-    if len(normalized_username) > USERNAME_MAX_LENGTH:
-        raise HTTPException(
-            status_code=422,
-            detail=f'Username must contain no more than {USERNAME_MAX_LENGTH} characters',
-        )
-
-    if not is_valid_username(normalized_username):
-        raise HTTPException(
-            status_code=422,
-            detail='Username contains invalid characters',
-        )
-
-    if len(normalized_display_name) < DISPLAY_NAME_MIN_LENGTH:
-        raise HTTPException(
-            status_code=422,
-            detail=f'Display name must contain at least {DISPLAY_NAME_MIN_LENGTH} characters',
-        )
-
-    if len(normalized_display_name) > DISPLAY_NAME_MAX_LENGTH:
-        raise HTTPException(
-            status_code=422,
-            detail=f'Display name must contain no more than {DISPLAY_NAME_MAX_LENGTH} characters',
-        )
-
-    if not is_valid_display_name(normalized_display_name):
-        raise HTTPException(
-            status_code=422,
-            detail='Display name contains invalid characters',
-        )
-
-    existing_user = await get_user_by_username(session, normalized_username)
-
-    if existing_user is not None:
-        raise HTTPException(
-            status_code=409,
-            detail='Username is already taken'
-        )
-
-    user = await create_user(
-        session=session,
-        username=normalized_username,
-        display_name=normalized_display_name,
-        is_username_custom=True,
-    )
-
-    return {
-        'id': user.id,
-        'username': user.username,
-        'display_name': user.display_name,
-        'is_username_custom': user.is_username_custom,
-    }
-
-
 # Рабочая ручка: ищет пользователя по точному публичному username.
 @router.get('/users/search')
 async def search_users_endpoint(
         query: str,
         session: AsyncSession = Depends(get_db),
+        current_session: UserSession = Depends(get_current_user_session),
 ):
+
     normalized_query = normalize_search_query(query)
 
     if not normalized_query:
@@ -135,6 +70,8 @@ async def search_users_endpoint(
     users = await search_users_by_username(
         session=session,
         query=normalized_query,
+        # Не показываем текущего пользователя в результатах собственного поиска.
+        exclude_user_id=current_session.user_id,
     )
 
     return [
@@ -146,4 +83,3 @@ async def search_users_endpoint(
         }
         for user in users
     ]
-

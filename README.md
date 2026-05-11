@@ -73,38 +73,52 @@ python run.py
 
 ### Пользователи
 
-- `POST /users/{user_name}`
-  Создаёт пользователя
+- `POST /auth/dev-login`
+  Временный вход/регистрация по телефону через JSON body
 
 - `GET /users/search?query=...`
-  Ищет пользователей по части имени
+  Ищет пользователя по точному публичному username
 
 ### Чаты
 
-- `POST /private-chats/{user_id}/{peer_user_id}`
+- `POST /private-chats`
   Находит существующий private chat или создаёт новый
 
-- `GET /users/{user_id}/chats`
-  Возвращает список чатов пользователя
+- `GET /users/me/chats`
+  Возвращает список чатов текущего пользователя из токена
 
-- `GET /chats/{chat_id}?user_id={user_id}`
+- `GET /chats/{chat_id}`
   Возвращает мета-информацию о чате для экрана открытия
 
-- `GET /chats/{chat_id}/messages`
+- `GET /chats/{chat_id}/messages?limit=50&offset=0`
   Возвращает историю сообщений
+
+Все рабочие ручки, кроме `/` и `/auth/dev-login`, требуют header:
+
+```http
+Authorization: Bearer <session_token>
+```
 
 ## WebSocket
 
 Подключение:
 
 ```text
-/ws/{user_id}
+/ws
+```
+
+Header:
+
+```http
+Authorization: Bearer <session_token>
 ```
 
 Формат исходящего сообщения от клиента:
 
 ```json
 {
+  "type": "send_message",
+  "client_message_id": "ios-local-id-123",
   "chat_id": 1,
   "to_user_id": 2,
   "text": "hello"

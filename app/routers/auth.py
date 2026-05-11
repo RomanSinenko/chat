@@ -3,11 +3,13 @@ from uuid import uuid4
 import phonenumbers
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.queries.user_phones import get_user_phone_by_phone, create_user_phone
 from app.queries.users import create_user, get_user_by_id
+from app.queries.user_sessions import create_user_session, revoke_active_user_sessions
 
 
 router = APIRouter()
@@ -35,13 +37,17 @@ def normalize_phone(phone: str) -> str | None:
 def generate_default_username() -> str:
     return f'user_{uuid4().hex[:8]}'
 
+class DevLoginRequest(BaseModel):
+    # Пока это dev-login без SMS, но телефон уже передаем через JSON body, а не query.
+    phone: str
+
 
 @router.post('/auth/dev-login')
 async def dev_login_endpoint(
-        phone: str,
+        request: DevLoginRequest,
         session: AsyncSession = Depends(get_db),
 ):
-    normalized_phone = normalize_phone(phone)
+    normalized_phone = normalize_phone(request.phone)
 
     if normalized_phone is None:
         raise HTTPException(
@@ -60,6 +66,12 @@ async def dev_login_endpoint(
                 detail='Invalid account state',
             )
 
+        # При повторном входе отзываем старые сессии этого пользователя.
+        # Для MVP держим одну активную сессию на пользователя.
+        await revoke_active_user_sessions(session, user.id)
+        # Plaintext token вернется клиенту, а в БД сохранится только token_hash.
+        user_session, session_token = await create_user_session(session, user.id)
+
         return {
             'user': {
                 'id': user.id,
@@ -68,6 +80,7 @@ async def dev_login_endpoint(
                 'is_username_custom': user.is_username_custom,
                 'phone_verified': existing_phone.phone_verified_at is not None,
             },
+            'session_token': session_token,
             'created': False,
         }
 
@@ -84,6 +97,10 @@ async def dev_login_endpoint(
         phone_e164=normalized_phone,
     )
 
+    # Для нового пользователя сразу создаем сессию, чтобы клиент мог ходить
+    # в защищенные HTTP-ручки и подключать WebSocket.
+    user_session, session_token = await create_user_session(session, user.id)
+
     return {
         'user': {
             'id': user.id,
@@ -92,5 +109,6 @@ async def dev_login_endpoint(
             'is_username_custom': user.is_username_custom,
             'phone_verified': user_phone.phone_verified_at is not None,
         },
+        'session_token': session_token,
         'created': True,
     }
