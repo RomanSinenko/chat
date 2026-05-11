@@ -7,17 +7,23 @@ from app.queries.chats import get_chats_by_user_id
 from app.queries.messages import get_last_message_by_chat_id
 from app.queries.chat_members import get_chat_members
 from app.services.peer_presentation import get_peer_display_name
+from app.dependencies.auth import get_current_user_session
+from app.models import UserSession
+
 
 
 router = APIRouter()
 
 
 # Рабочая ручка: возвращает список чатов пользователя.
-@router.get('/users/{user_id}/chats')
+@router.get('/users/me/chats')
 async def get_user_chats_endpoint(
-        user_id: int,
         session: AsyncSession = Depends(get_db),
+        current_session: UserSession = Depends(get_current_user_session),
 ):
+    # Список чатов возвращаем для пользователя из активной сессии.
+    # Клиент больше не передает user_id в URL.
+    user_id = current_session.user_id
     user = await get_user_by_id(session, user_id)
 
     if user is None:

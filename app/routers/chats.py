@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from pydantic import BaseModel
 from app.queries.users import get_user_by_id
 from app.queries.chats import (
     create_chat,
@@ -12,18 +13,28 @@ from app.queries.chats import (
 from app.queries.messages import get_message_by_chat_id
 from app.queries.chat_members import add_chat_member, get_chat_members, get_chat_member
 from app.services.peer_presentation import get_peer_display_name
+from app.dependencies.auth import get_current_user_session
+from app.models import UserSession
+
 
 
 router = APIRouter()
+
+
+class PrivateChatRequest(BaseModel):
+    # Собеседник приходит в body, а текущего пользователя берем из Authorization token.
+    peer_user_id: int
 
 
 # Рабочая ручка: возвращает мета-информацию о чате для экрана открытия чата.
 @router.get('/chats/{chat_id}')
 async def get_chat_meta_endpoint(
         chat_id: int,
-        user_id: int,
-        session: AsyncSession = Depends(get_db)
+        session: AsyncSession = Depends(get_db),
+        current_session: UserSession = Depends(get_current_user_session),
 ):
+    # user_id берется из активной сессии, поэтому клиент не может подставить чужой user_id.
+    user_id = current_session.user_id
     chat = await get_chat_meta_by_id(session, chat_id)
 
     if chat is None:
@@ -66,12 +77,15 @@ async def get_chat_meta_endpoint(
 @router.get('/chats/{chat_id}/messages')
 async def get_chat_message_endpoint(
         chat_id: int,
-        user_id: int,
         limit: int = 50,
         offset: int = 0,
         session: AsyncSession = Depends(get_db),
+        current_session: UserSession = Depends(get_current_user_session),
 ):
+    # Историю сообщений можно читать только от имени пользователя из токена.
+    user_id = current_session.user_id
     chat = await get_chat_by_id(session, chat_id)
+
     if chat is None:
         raise HTTPException(status_code=404, detail='Chat not found')
 
@@ -100,12 +114,15 @@ async def get_chat_message_endpoint(
 
 
 # Рабочая ручка: находит существующий личный чат между двумя пользователями или создает новый.
-@router.post('/private-chats/{user_id}/{peer_user_id}')
+@router.post('/private-chats')
 async def get_or_create_private_chat_endpoint(
-        user_id: int,
-        peer_user_id: int,
-        session: AsyncSession = Depends(get_db)
+        request: PrivateChatRequest,
+        session: AsyncSession = Depends(get_db),
+        current_session: UserSession = Depends(get_current_user_session),
 ):
+    peer_user_id = request.peer_user_id
+    # Создатель private chat определяется по токену, а не по данным от клиента.
+    user_id = current_session.user_id
     user = await get_user_by_id(session, user_id)
     peer_user = await get_user_by_id(session, peer_user_id)
 
