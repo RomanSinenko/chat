@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.errors import api_error
 from app.db import get_db
 from app.queries.users import get_user_by_id
 from app.queries.chats import get_chats_by_user_id
@@ -27,7 +28,11 @@ async def get_user_chats_endpoint(
     user = await get_user_by_id(session, user_id)
 
     if user is None:
-        raise HTTPException(status_code=404, detail=f'User with id {user_id} not found')
+        raise api_error(
+            status_code=404,
+            code='user_not_found',
+            message='User not found',
+        )
 
     chats = await get_chats_by_user_id(session, user_id)
     response = []
@@ -35,6 +40,9 @@ async def get_user_chats_endpoint(
     for chat in chats:
         members = await get_chat_members(session, chat.id)
         last_message = await get_last_message_by_chat_id(session, chat.id)
+
+        if chat.chat_type == 'private' and last_message is None:
+            continue
 
         display_name = chat.title
         peer_user_id = None
@@ -74,3 +82,4 @@ async def get_user_chats_endpoint(
         )
 
     return response
+

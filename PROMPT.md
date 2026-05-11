@@ -569,6 +569,14 @@ WS ws://localhost:8000/ws
 - настройки видимости телефона
 - настройки поиска по телефону
 - smart search: `Elena` / `Елена`, `ё/е`, Unicode-normalization, пробелы, транслитерация и возможные опечатки
+- anti-abuse/DDoS protection: rate limits для login, search, private chat creation, history refresh и WebSocket; лимиты по IP, user, session token и количеству соединений
+- user agreement acceptance: хранить факт принятия пользовательского соглашения, версию и дату; соглашение должно быть доступно в Settings
+- FAQ и first-run instruction как будущий продуктовый контент
+- anti-spam temporary blocks за массовые сообщения неизвестным пользователям
+- user reputation/rating: учитывать spam signals, блокировки, открытые данные, возраст аккаунта и нормальные переписки с контактами
+- scam/spam warnings при сообщении от неизвестного, низкорейтингового или spam-suspect пользователя
+- talk rooms / ephemeral spaces: сообщения или комнаты с ограниченным временем жизни, возможно зависящим от активности пользователей
+- retention policy и scheduled cleanup job для старых revoked/expired `user_sessions`: хранение по сроку жизни или по количеству последних сессий на пользователя, например последние 20
 - тесты на API и WebSocket
 - линтеры и форматирование
 - Alembic migrations

@@ -2,14 +2,21 @@ from uuid import uuid4
 
 import phonenumbers
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.dependencies.auth import get_current_user_session
+from app.models import UserSession
+from app.errors import api_error
 from app.db import get_db
 from app.queries.user_phones import get_user_phone_by_phone, create_user_phone
 from app.queries.users import create_user, get_user_by_id
-from app.queries.user_sessions import create_user_session, revoke_active_user_sessions
+from app.queries.user_sessions import (
+    create_user_session,
+    revoke_active_user_sessions,
+    revoke_user_session_by_id
+)
 
 
 router = APIRouter()
@@ -37,6 +44,7 @@ def normalize_phone(phone: str) -> str | None:
 def generate_default_username() -> str:
     return f'user_{uuid4().hex[:8]}'
 
+
 class DevLoginRequest(BaseModel):
     # Пока это dev-login без SMS, но телефон уже передаем через JSON body, а не query.
     phone: str
@@ -50,9 +58,10 @@ async def dev_login_endpoint(
     normalized_phone = normalize_phone(request.phone)
 
     if normalized_phone is None:
-        raise HTTPException(
+        raise api_error(
             status_code=422,
-            detail='Phone must be valid and include country code, for example +79991234567',
+            code='phone_invalid',
+            message='Phone must be valid and include country code, for example +79991234567',
         )
 
     existing_phone = await get_user_phone_by_phone(session, normalized_phone)
@@ -61,9 +70,10 @@ async def dev_login_endpoint(
         user = await get_user_by_id(session, existing_phone.user_id)
 
         if user is None:
-            raise HTTPException(
+            raise api_error(
                 status_code=500,
-                detail='Invalid account state',
+                code='invalid_account_state',
+                message='Invalid account state',
             )
 
         # При повторном входе отзываем старые сессии этого пользователя.
@@ -112,3 +122,21 @@ async def dev_login_endpoint(
         'session_token': session_token,
         'created': True,
     }
+
+
+# Рабочая ручка: отзывает текущую сессию пользователя.
+# После logout этот session_token больше нельзя использовать.
+@router.post('/auth/logout')
+async def logout_endpoint(
+        session: AsyncSession = Depends(get_db),
+        current_session: UserSession = Depends(get_current_user_session),
+):
+    await revoke_user_session_by_id(
+        session=session,
+        session_id=current_session.id,
+    )
+
+    return {
+        'ok': True,
+    }
+

@@ -1,3 +1,5 @@
+from datetime import datetime, UTC
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,3 +73,37 @@ async def get_user_by_username(session: AsyncSession, username: str):
     result = await session.execute(stmt)
 
     return result.scalar_one_or_none()
+
+
+# Обновляет публичный username пользователя.
+# После смены username считаем, что пользователь выбрал его сам.
+async def update_user_username(
+        session: AsyncSession,
+        user: User,
+        username: str,
+):
+    user.username = username
+    user.is_username_custom = True
+    user.updated_at = datetime.now(UTC)
+
+    await session.commit()
+    await session.refresh(user)
+
+    return user
+
+
+# Обновляет отображаемое имя пользователя.
+# display_name может быть строкой или None, если пользователь очистил имя.
+async def update_user_display_name(
+        session: AsyncSession,
+        user: User,
+        display_name: str | None,
+):
+    user.display_name = display_name
+    user.updated_at = datetime.now(UTC)
+
+    await session.commit()
+    await session.refresh(user)
+
+    return user
+
