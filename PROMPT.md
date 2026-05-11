@@ -521,29 +521,27 @@ WS ws://localhost:8000/ws
 
 # Последний Завершенный Backend-Шаг
 
-Сделано в `backend-websocket-message-contract-polish`:
-- добавлен session-auth foundation через `user_sessions`
-- `POST /auth/dev-login` возвращает `session_token`
-- HTTP-ручки переведены на `Authorization: Bearer <session_token>`
-- WebSocket переведен на `/ws` + `Authorization`
-- входящий WebSocket event обновлен до `type = send_message`
-- добавлен `client_message_id`
-- текст валидируется: trim, не пустой, max 4000
-- всегда отправляется `message_ack` после сохранения
-- online-получателю отправляется полноценное `message` событие
-- offline-получатель не считается ошибкой сохранения
-- убрано логирование полного текста сообщений
-- добавлены учебные комментарии в измененные backend-модули
+Сделано в `backend-mvp-auth-profile-polish`:
+- добавлен общий helper `api_error` для стабильного формата ошибок
+- `GET /users/search` переведен на стабильные error codes
+- `POST /auth/dev-login` переведен на стабильные error codes для ошибок телефона и битого состояния аккаунта
+- добавлен `POST /auth/logout` для revoke текущей сессии
+- добавлен `PATCH /users/me/username`
+- username нормализуется: trim, удаление ведущего `@`, lowercase
+- username validation: длина 3-32, символы `a-z`, `0-9`, `_`, `-`, `!`, первый/последний символ буква или цифра, запрет `__`, `--`, `!!`
+- при смене username выставляется `is_username_custom = True`
+- добавлен `PATCH /users/me/display-name`
+- `display_name` можно установить или очистить через `null`
+- `display_name` validation: длина 3-50, буквы RU/EN, цифры, пробел, `.`, `_`, `-`, `!`
+- при обновлении username/display_name обновляется `users.updated_at`
+- пустые private chats без сообщений скрываются из `GET /users/me/chats`
 
 ---
 
 # Backend Backlog
 
 Ближайшее:
-- добавить endpoint смены username
-- добавить endpoint изменения display_name
-- добавить logout/revoke текущей сессии
-- добавить стабильные error codes вместо завязки клиента на текст ошибки
+- продолжить перевод оставшихся HTTP-ошибок на стабильный формат `api_error`
 - позже добавить SMS/OTP, rate limits и полноценный auth-flow
 - позже вернуться к `UUID/public_id`, если потребуется внешний opaque identifier
 
